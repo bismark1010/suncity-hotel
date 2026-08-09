@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sun City Hotel — Bookings</title>
+<style>
+  :root{
+    --night:#10142B; --amber:#F5A623; --coral:#FF7A59;
+    --sand:#F4E9D8; --stone:#8B8478; --ink:#1C1710;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    background:var(--sand); color:var(--ink); padding:24px;
+  }
+  h1{font-size:1.3rem; margin:0 0 4px;}
+  .sub{color:var(--stone); font-size:0.85rem; margin-bottom:24px;}
+  .setup{
+    background:white; border:1px solid rgba(28,23,16,0.12); border-radius:12px;
+    padding:16px; margin-bottom:24px; display:flex; gap:10px; flex-wrap:wrap; align-items:end;
+  }
+  .field{display:flex; flex-direction:column; gap:6px; flex:1; min-width:200px;}
+  .field label{font-size:0.72rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--stone);}
+  .field input{
+    padding:10px 12px; border:1px solid rgba(28,23,16,0.2); border-radius:8px; font-size:0.9rem;
+  }
+  button{
+    background:var(--night); color:var(--sand); border:none; padding:11px 20px;
+    border-radius:8px; font-weight:600; cursor:pointer; font-size:0.9rem;
+  }
+  button:hover{opacity:0.9;}
+  button:disabled{opacity:0.5; cursor:default;}
+  .status{margin:12px 0; font-size:0.85rem;}
+  .status.error{color:#c0392b;}
+  .status.ok{color:#2e7d32;}
+  .stats{display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;}
+  .stat{background:white; border-radius:10px; padding:14px 20px; border:1px solid rgba(28,23,16,0.1);}
+  .stat b{display:block; font-size:1.4rem;}
+  .stat span{font-size:0.75rem; color:var(--stone); text-transform:uppercase; letter-spacing:0.04em;}
+  table{width:100%; border-collapse:collapse; background:white; border-radius:12px; overflow:hidden; border:1px solid rgba(28,23,16,0.1);}
+  th,td{text-align:left; padding:12px 14px; font-size:0.85rem; border-bottom:1px solid rgba(28,23,16,0.08);}
+  th{background:rgba(28,23,16,0.04); font-size:0.72rem; text-transform:uppercase; letter-spacing:0.04em; color:var(--stone);}
+  tr:last-child td{border-bottom:none;}
+  .empty{padding:40px; text-align:center; color:var(--stone);}
+  .badge{
+    display:inline-block; padding:2px 8px; border-radius:100px; font-size:0.7rem;
+    background:rgba(245,166,35,0.15); color:#a3690f;
+  }
+</style>
+</head>
+<body>
+
+<h1>🌅 Sun City Hotel — Bookings</h1>
+<p class="sub">Live view of every booking in the real database.</p>
+
+<div class="setup">
+  <div class="field">
+    <label for="apiBase">Backend URL</label>
+    <input type="text" id="apiBase" value="https://suncity-hotel.onrender.com" placeholder="https://your-backend.onrender.com">
+  </div>
+  <div class="field">
+    <label for="adminKey">Admin key</label>
+    <input type="password" id="adminKey" placeholder="paste your ADMIN_API_KEY">
+  </div>
+  <button id="loadBtn">Load Bookings</button>
+</div>
+
+<div id="status" class="status"></div>
+
+<div class="stats" id="stats" style="display:none;">
+  <div class="stat"><b id="statCount">0</b><span>Bookings</span></div>
+  <div class="stat"><b id="statRevenue">$0</b><span>Total revenue</span></div>
+  <div class="stat"><b id="statNights">0</b><span>Room-nights booked</span></div>
+</div>
+
+<div id="tableWrap"></div>
+
+<script>
+  const apiBaseEl = document.getElementById('apiBase');
+  const adminKeyEl = document.getElementById('adminKey');
+  const statusEl = document.getElementById('status');
+  const statsEl = document.getElementById('stats');
+  const tableWrap = document.getElementById('tableWrap');
+  const loadBtn = document.getElementById('loadBtn');
+
+  function fmtDate(ms) {
+    return new Date(ms).toLocaleString(undefined, {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+  async function loadBookings() {
+    const base = apiBaseEl.value.trim().replace(/\/$/, '');
+    const key = adminKeyEl.value.trim();
+    if (!base || !key) {
+      statusEl.textContent = 'Enter both the backend URL and your admin key.';
+      statusEl.className = 'status error';
+      return;
+    }
+
+    loadBtn.disabled = true;
+    loadBtn.textContent = 'Loading…';
+    statusEl.textContent = '';
+    statusEl.className = 'status';
+
+    try {
+      const res = await fetch(`${base}/api/bookings`, {
+        headers: { 'x-admin-key': key }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+
+      const bookings = data.bookings || [];
+      statusEl.textContent = `Loaded ${bookings.length} booking${bookings.length === 1 ? '' : 's'} — ${new Date().toLocaleTimeString()}`;
+      statusEl.className = 'status ok';
+
+      const active = bookings.filter(b => b.status !== 'cancelled');
+      statsEl.style.display = 'flex';
+      document.getElementById('statCount').textContent = bookings.length;
+      document.getElementById('statRevenue').textContent =
+        '$' + active.reduce((s, b) => s + (b.total || 0), 0).toLocaleString('en-US');
+      document.getElementById('statNights').textContent =
+        active.reduce((s, b) => s + (b.nights || 0), 0);
+
+      if (!bookings.length) {
+        tableWrap.innerHTML = '<div class="empty">No bookings yet.</div>';
+        return;
+      }
+
+      tableWrap.innerHTML = `
+        <table>
+          <thead><tr>
+            <th>Guest</th><th>Room</th><th>Check-in</th><th>Check-out</th>
+            <th>Nights</th><th>Guests</th><th>Total</th><th>Status</th><th>Booked</th>
+          </tr></thead>
+          <tbody>
+            ${bookings.map(b => `
+              <tr>
+                <td>${b.guest_name}<br><span style="color:var(--stone);font-size:0.78rem;">${b.guest_email}</span></td>
+                <td>${b.room_id}</td>
+                <td>${b.checkin}</td>
+                <td>${b.checkout}</td>
+                <td>${b.nights}</td>
+                <td>${b.guests}</td>
+                <td>$${b.total}</td>
+                <td><span class="badge">${b.status}</span></td>
+                <td>${fmtDate(b.created_at)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>`;
+    } catch (e) {
+      statusEl.textContent = `Couldn't load bookings: ${e.message}`;
+      statusEl.className = 'status error';
+    } finally {
+      loadBtn.disabled = false;
+      loadBtn.textContent = 'Load Bookings';
+    }
+  }
+
+  loadBtn.addEventListener('click', loadBookings);
+  adminKeyEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadBookings(); });
+</script>
+
+</body>
+</html>
